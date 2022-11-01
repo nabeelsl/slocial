@@ -26,10 +26,11 @@ ACCESS_KEY_SECRET=None
 
 auth = tweepy.OAuthHandler(API_KEY,API_KEY_SECRET)
 auth.set_access_token(ACCESS_KEY, ACCESS_KEY_SECRET)
+customer_handle="indxbus"
+
 
 # Create API object
 api = tweepy.API(auth)
-customer_handle="indxbus"
 import random
 # Init Db
 
