@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 import requests
 import json
 import pandas as pd
+import time
 
 sp = spacy.load('en_core_web_sm')
 
@@ -209,82 +210,83 @@ def case_to_json(reply_object):
 
 
 
+#Run every minute for day
+sleep_secs=60
+for minute in range(1,1440): 
+        tweets_replies_dict={}
+        tweet_ids=get_original_tweets_id(lookback_posts=20)
+        for tid in tweet_ids:
+            reply_metadata=get_tweet_replies(tweet_id=tid)
+            if len(reply_metadata)!=0:
+                tweets_replies_dict[tid]=reply_metadata
 
 
-tweets_replies_dict={}
-tweet_ids=get_original_tweets_id(lookback_posts=20)
-for tid in tweet_ids:
-    reply_metadata=get_tweet_replies(tweet_id=tid)
-    if len(reply_metadata)!=0:
-        tweets_replies_dict[tid]=reply_metadata
+        if not tweets_replies_dict:
+            print("No new tweet found")
 
-        
-if not tweets_replies_dict:
-    print("No new tweet found")
+        else:
+            for tweet in tweets_replies_dict:
+                replies=tweets_replies_dict[tweet]
+                filtered_replies=[]
+                for reply in replies:
+                    reply_id=reply['reply_id']
+                    try:
+                        case_number=int(extract_case_number(reply.get('text')))
+                    except Exception as e:
+                        print(e)
+                    try:
+                        exists=pd.read_sql_query(f"Select reply_id from tweet_replies_trace where reply_id = '{reply_id}'",sqlite_connection)
+                    except:
+                        exists=[]
+                    if len(exists)==0:
 
-else:
-    for tweet in tweets_replies_dict:
-        replies=tweets_replies_dict[tweet]
-        filtered_replies=[]
-        for reply in replies:
-            reply_id=reply['reply_id']
-            try:
-                case_number=int(extract_case_number(reply.get('text')))
-            except Exception as e:
-                print(e)
-            try:
-                exists=pd.read_sql_query(f"Select reply_id from tweet_replies_trace where reply_id = '{reply_id}'",sqlite_connection)
-            except:
-                exists=[]
-            if len(exists)==0:
-                
-                if bool(case_number):
-                    reply["category"]="case_comment"
-                    reply["id"] = case_number         
-                else:                             
-                    text=return_clean_text(reply.get('text'))
-                    category=classify_text(text)
-                    reply["category"]=category
-                reply["user_impact"]=user_escalation_impact(reply)
-                
-                if (reply["category"] in ['case','case_comment']):
-                    filtered_replies.append(reply)
-            else:
-                print("skipping ",reply['reply_id'])
+                        if bool(case_number):
+                            reply["category"]="case_comment"
+                            reply["id"] = case_number         
+                        else:                             
+                            text=return_clean_text(reply.get('text'))
+                            category=classify_text(text)
+                            reply["category"]=category
+                        reply["user_impact"]=user_escalation_impact(reply)
 
-        if len(filtered_replies)>0:
-            tweetreplies = pd.json_normalize(filtered_replies) 
-            tweetreplies['conversation_id']=tweet
-            try:
-                tweetreplies=tweetreplies.drop(columns='id')
-            except:
-                pass
-            tweetreplies.to_sql("tweet_replies_trace",sqlite_connection, if_exists="append")
+                        if (reply["category"] in ['case','case_comment']):
+                            filtered_replies.append(reply)
+                    else:
+                        print("skipping ",reply['reply_id'])
 
-            for reply in filtered_replies:
-                try:
-                    if reply['category']=='case':
-                        payload=case_to_json(reply)
-                        requests.post("https://supportlogic-social.glitch.me/cases",payload)
-                        reply['sl_account_name']=payload['sl_account_name']
-                        reply['id']=payload['id']
-                        reply['sl_agent']=payload['sl_agent']
-                        create_new_case(reply)
-                        
-                    elif reply['category']=='case_comment':
-                        case_id=case_number
-                        escalate_case(reply['id'])
-                        process_case_comment(reply)
-                except Exception as e:
-                    print (e)
-                    print("skipped")
+                if len(filtered_replies)>0:
+                    tweetreplies = pd.json_normalize(filtered_replies) 
+                    tweetreplies['conversation_id']=tweet
+                    try:
+                        tweetreplies=tweetreplies.drop(columns='id')
+                    except:
+                        pass
+                    tweetreplies.to_sql("tweet_replies_trace",sqlite_connection, if_exists="append")
 
-                    #DEMO
-                    #Create Case
-                    #Wrong Case nUmber
-                    #Correct Case number > Escalate
-                    #spam
-    
+                    for reply in filtered_replies:
+                        try:
+                            if reply['category']=='case':
+                                payload=case_to_json(reply)
+                                requests.post("https://supportlogic-social.glitch.me/cases",payload)
+                                reply['sl_account_name']=payload['sl_account_name']
+                                reply['id']=payload['id']
+                                reply['sl_agent']=payload['sl_agent']
+                                create_new_case(reply)
+
+                            elif reply['category']=='case_comment':
+                                case_id=case_number
+                                escalate_case(reply['id'])
+                                process_case_comment(reply)
+                        except Exception as e:
+                            print (e)
+                            print("skipped")
+
+                            #DEMO
+                            #Create Case
+                            #Wrong Case nUmber
+                            #Correct Case number > Escalate
+                            #spam
+    time.sleep(sleep_secs)
 
 #sentiment = sp("This is sample")._.blob.polarity
 #sentiment = round(sentiment,2)
