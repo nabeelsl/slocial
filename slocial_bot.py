@@ -1,9 +1,4 @@
-"""
-Author: Nabeel Mehdi
-Email: nabeelmehdi@supportlogic.io
-Company: Support Logic
-Purpose: SupportOverflow Hackathon
-"""
+
 
 import tweepy
 import spacy
